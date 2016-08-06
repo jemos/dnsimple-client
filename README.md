@@ -50,7 +50,6 @@ For demonstration we'll be using email and token based authentication. In the fo
 
 					if( publicIP === homeIP ) {
 						console.log("No need to update.");
-						console.log("update.js finished.");
 						process.exit(0);
 					}
 
@@ -62,7 +61,6 @@ For demonstration we'll be using email and token based authentication. In the fo
 						}
 
 						console.log("Update was done successfully.");
-						console.log("update.js finished.");
 					});
 				});
 			});
