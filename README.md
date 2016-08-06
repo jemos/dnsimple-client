@@ -70,3 +70,39 @@ For demonstration we'll be using email and token based authentication. In the fo
 		});
 
 	});
+
+# Module Reference
+
+The following sections describe the module objects and how they can be used with examples. We start with the highest level one which can be used to manage domains, registration, name servers, SSL certificates, contacts, services, templates, users and subscriptions.
+
+DNSimple Object
+###############
+
+Domain Object
+#############
+
+DomainRecord Object
+###################
+
+Registration
+############
+
+NameServer Object
+#################
+
+SSL Certificates
+################
+
+Contacts Object
+###############
+
+Services Object
+###############
+
+Templaes Object
+###############
+
+
+# About
+
+# License
