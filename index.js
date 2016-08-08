@@ -31,7 +31,14 @@ function DNSimple(auth) {
 	}
 }
 
-function httpRequest(options,dataReadyHandler) {
+function httpRequest(options,dataReadyHandler,reqBody) {
+
+	if( reqBody ) {
+		// Add record id to the attribute list, otherwise will fail.
+		var reqData = JSON.stringify(reqBody);
+		options.headers['Content-Type'] = "application/json";
+		options.headers['Content-Length'] = reqData.length;
+	}
 
 	var callback = function(resp) {
 
@@ -53,6 +60,9 @@ function httpRequest(options,dataReadyHandler) {
 		dataReadyHandler(null,err);
 	});
 
+	if( reqBody ) {
+		req.write(reqData);
+	}
 	req.end();
 }
 
@@ -82,15 +92,80 @@ DNSimple.prototype.getAllDomains = function(cb) {
 
 };
 
-DNSimple.prototype.createDomain = function(domain) {
+DNSimple.prototype.createDomain = function(attrList) {
+
+	debug('DNSimple.createDomain() called');
+
+	var options = Object.assign({},this.options);
+	options.path = '/v1/domains';
+	options.method = 'POST';
+
+	var dnsimple = this;
+
+	httpRequest(options, function(jsonData,err) {
+
+		if( err ) {
+			return cb(null,err);
+		}
+
+		var domainList = jsonData.map(function(entry) {
+			return new Domain(dnsimple,entry.domain);
+		});
+		
+		// Call the callback
+		cb(domainList,null);
+	}, {domain: attrList});
 
 };
 
 DNSimple.prototype.deleteDomain = function(domain) {
 
+	debug('DNSimple.deleteDomain() called');
+
+	if( !(domain instanceof Domain) ) {
+		throw Error("Argument is not a domain object!");
+	}
+
+	var options = Object.assign({},this.options);
+	options.path = '/v1/domains/' + domain.domainData.id;
+	options.method = 'DELETE';
+
+	var dnsimple = this;
+
+	httpRequest(options, function(jsonData,err) {
+
+		if( err ) {
+			return cb(null,err);
+		}
+
+		cb(true,null);
+	});
+
 };
 
 DNSimple.prototype.resetDomainToken = function(domain) {
+
+	debug('DNSimple.resetDomainToken() called');
+
+	if( !(domain instanceof Domain) ) {
+		throw Error("Argument is not a domain object!");
+	}
+
+	var options = Object.assign({},this.options);
+	options.path = '/v1/domains/' + domain.domainData.id + '/token';
+	options.method = 'POST';
+
+	var dnsimple = this;
+
+	httpRequest(options, function(jsonData,err) {
+
+		if( err ) {
+			return cb(null,err);
+		}
+
+		var newDomain = new Domain(dnsimple,jsonData.domain);
+		cb(newDomain,null);
+	});
 
 };
 
@@ -118,61 +193,47 @@ Domain.prototype.dump = function() {
 };
 
 Domain.prototype.getAllRecords = function(cb) {
+
 	debug('Domain.getAllRecords() called');
 
 	var options = Object.assign({},this.dnsimple.options);
 	options.path = '/v1/domains/' + this.domainData.id + '/records';
 	options.method = 'GET';
 
-	var callback = function(resp) {
+	var domain = this;
 
-		var data = '';
-		resp.on('data', function(chunk) {
-			data += chunk;
+	httpRequest(options, function(jsonData,err) {
+
+		if( err ) {
+			return cb(null,err);
+		}
+
+		var recordList = jsonData.map(function(entry) {
+			return new DomainRecord(domain,entry.record);
 		});
-
-		resp.on('end', function() {
-			var jsonData = JSON.parse(data);
-			var recordList = jsonData.map(function(entry) {
-				return new DomainRecord(domain,entry.record);
-			});
-			cb(recordList);
-		});
-	};
-	var req = https.request(options,callback);
-
-	req.on('error', function(err) {
-		console.log("Error: failed to make request: "+err);
+		cb(recordList, null);
 	});
-	req.end();
-}
+
+};
 
 Domain.prototype.getRecord = function(id,cb) {
 	debug('Domain.getRecord(id="+id+") called');
 
 	var options = Object.assign({},this.dnsimple.options);
-	options.path = '/v1/domains/' + this.domainData.id;
+	options.path = '/v1/domains/' + this.domainData.id + '/record/' + id;
 	options.method = 'GET';
 
-	var callback = function(resp) {
+	var domain = this;
 
-		var data = '';
-		resp.on('data', function(chunk) {
-			data += chunk;
-		});
+	httpRequest(options, function(jsonData,err) {
 
-		resp.on('end', function() {
-			var jsonData = JSON.parse(data);
-			var newRecord = new DomainRecord(dnsimple,jsonData.record);
-			cb(newRecord,null);
-		});
-	};
-	var req = https.request(options,callback);
+		if( err ) {
+			return cb(null,err);
+		}
 
-	req.on('error', function(err) {
-		cb(null,err);
+		var record = new DomainRecord(domain,jsonData.record);
+		cb(record, null);
 	});
-	req.end();
 };
 
 // If more than one record matches, it will only return the first one.
@@ -185,32 +246,23 @@ Domain.prototype.findRecord = function(matchFunc,cb) {
 
 	var domain = this;
 
-	var callback = function(resp) {
+	httpRequest(options, function(jsonData,err) {
 
-		var data = '';
-		resp.on('data', function(chunk) {
-			data += chunk;
+		if( err ) {
+			return cb(null,err);
+		}
+
+		var recordList = jsonData.filter(function(entry) {
+			return matchFunc(entry.record);
 		});
-
-		resp.on('end', function() {
-			var jsonData = JSON.parse(data);
-			var recordList = jsonData.filter(function(entry) {
-				return matchFunc(entry.record);
-			});
-			if( recordList.length ) {
-				var record = new DomainRecord(domain,recordList[0].record)
-				cb(record);
-			} else {
-				cb(null);
-			}
-		});
-	};
-	var req = https.request(options,callback);
-
-	req.on('error', function(err) {
-		console.log("Error: failed to make request: "+err);
+		if( recordList.length ) {
+			var record = new DomainRecord(domain,recordList[0].record)
+			cb(record,null);
+		} else {
+			cb(null,null);
+		}
 	});
-	req.end();
+
 };
 
 function DomainRecord(domain,data) {
@@ -227,33 +279,25 @@ function DomainRecord(domain,data) {
 }
 
 DomainRecord.prototype.refresh = function() {
-	//
 	debug('DomainRecord.refresh() called');
 
-	var options = Object.assign({},this.dnsimple.options);
+	var options = Object.assign({},this.domain.dnsimple.options);
 	options.path = '/v1/domains/' + this.domain.domainData.id + '/records/' + this.recordData.id;
 	options.method = 'GET';
 
-	var callback = function(resp) {
+	var domain = this;
 
-		var data = '';
-		resp.on('data', function(chunk) {
-			data += chunk;
-		});
+	httpRequest(options, function(jsonData,err) {
 
-		resp.on('end', function() {
-			var jsonData = JSON.parse(data);
-			var newRecord = new DomainRecord(dnsimple,jsonData.record);
-			cb(newRecord);
-		});
-	};
-	var req = https.request(options,callback);
+		if( err ) {
+			return cb(null,err);
+		}
 
-	req.on('error', function(err) {
-		console.log("Error: failed to make request: "+err);
+		this.recordData = jsonData.record;
+		cb(true, null);
 	});
-	req.end();
-}
+
+};
 
 DomainRecord.prototype.update = function(attrList,cb) {
 	//
@@ -263,42 +307,22 @@ DomainRecord.prototype.update = function(attrList,cb) {
 	options.path = '/v1/domains/' + this.domain.domainData.id + '/records/' + this.recordData.id;
 	options.method = 'PUT';
 
-	// Add record id to the attribute list, otherwise will fail.
-	var reqData = JSON.stringify({record: attrList});
-	options.headers['Content-Type'] = "application/json";
-	options.headers['Content-Length'] = reqData.length;
-
 	var domain = this.domain;
 
-	var callback = function(resp) {
+	httpRequest(options, function(jsonData,err) {
 
-		var data = '';
-		resp.on('data', function(chunk) {
-			data += chunk;
-		});
+		if( err ) {
+			return cb(null,err);
+		}
 
-		resp.on('end', function() {
-			var jsonData = JSON.parse(data);
-
-			if( jsonData.message ) {
-				return cb(null,jsonData.message);
-			}
+		if( jsonData.message ) {
+			return cb(null,jsonData.message);
+		}
 			
-			var record = new DomainRecord(domain,jsonData.record);
-			cb(record,null);
-		});
-	};
-	
-	//debug('Making request with options:');
-	//debug(options);
-	var req = https.request(options,callback);
+		var record = new DomainRecord(domain,jsonData.record);
+		cb(record,null);
+	}, {record: attrList});
 
-	req.on('error', function(err) {
-		cb(null,err);
-	});
-
-	req.write(reqData);
-	req.end();
 };
 
 DomainRecord.prototype.dump = function() {
